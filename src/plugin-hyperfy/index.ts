@@ -13,6 +13,8 @@ import { hyperfyUseNearestObjectAction } from './actions/use';
 import { hyperfyStopMovingAction } from './actions/stop';
 import { hyperfyWalkRandomlyAction } from './actions/walk_randomly';
 import { hyperfyProvider } from './providers/world';
+import { hyperfyJumpAction } from './actions/jump';
+import { hyperfyCrouchAction } from './actions/crouch';
 
 // --- Hardcoded values matching agent/index.mjs ---
 const HYPERFY_WS_URL = process.env.WS_URL || 'wss://chill.hyperfy.xyz/ws'
@@ -145,7 +147,9 @@ export const hyperfyPlugin: Plugin = {
       hyperfyGotoEntityAction,
       hyperfyUseNearestObjectAction,
       hyperfyStopMovingAction,
-      hyperfyWalkRandomlyAction
+      hyperfyWalkRandomlyAction,
+      hyperfyJumpAction,
+      hyperfyCrouchAction
   ],
   providers: [
       hyperfyProvider // Register the Hyperfy provider

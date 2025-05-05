@@ -64,6 +64,15 @@ export class AgentControls extends System {
   private _randomWalkMaxDistance: number = RANDOM_WALK_DEFAULT_MAX_DISTANCE;
   // <-------------------------
 
+  // Add these properties to the AgentControls class
+  private _isJumping: boolean = false;
+  private _isCrouching: boolean = false;
+  private _jumpForce: number = 5; // Adjust based on desired jump height
+  private _jumpCooldown: number = 1000; // ms between jumps
+  private _lastJumpTime: number = 0;
+  private _normalHeight: number = 1.7; // Default player height
+  private _crouchHeight: number = 0.9; // Crouched player height
+
   constructor(world: any) {
     super(world); // Call base System constructor
 
@@ -124,15 +133,47 @@ export class AgentControls extends System {
    */
   public navigateTo(x: number, z: number): void {
     logger.info(`[Controls Navigation] Request to navigate to (${x.toFixed(2)}, ${z.toFixed(2)})`);
+    
     // --- Add check for player existence early ---
     if (!this.world?.entities?.player) {
         logger.error("[Controls Navigation] Cannot navigateTo: Player entity not found.");
         this.stopNavigation("error - player missing");
         return;
     }
-    // -------------------------------------------
-    if (!this._validatePlayerState("navigateTo")) return;
-
+    
+    // Check player.base exists
+    if (!this.world.entities.player.base) {
+        logger.error("[Controls Navigation] Cannot navigateTo: Player base not found.");
+        this.stopNavigation("error - player base missing");
+        return;
+    }
+    
+    // Instead of using validatePlayerState, directly check for position values
+    try {
+        const pos = this.world.entities.player.base.position;
+        
+        // As long as position has numeric x,y,z values, we can proceed
+        if (!pos || typeof pos.x !== 'number' || typeof pos.z !== 'number') {
+            logger.error("[Controls Navigation] Cannot navigateTo: Invalid player position values.");
+            this.stopNavigation("error - invalid position values");
+            return;
+        }
+        
+        // Same for quaternion
+        const quat = this.world.entities.player.base.quaternion;
+        if (!quat || typeof quat.x !== 'number' || typeof quat.y !== 'number' || 
+            typeof quat.z !== 'number' || typeof quat.w !== 'number') {
+            logger.error("[Controls Navigation] Cannot navigateTo: Invalid player quaternion values.");
+            this.stopNavigation("error - invalid quaternion values");
+            return;
+        }
+    } catch (e) {
+        logger.error(`[Controls Navigation] Error checking player state: ${e}`);
+        this.stopNavigation("error - exception checking player state");
+        return;
+    }
+    
+    // Now we can proceed with navigation
     this.stopNavigation("starting new navigation"); // Stop previous navigation first
 
     this._navigationTarget = new THREE.Vector3(x, 0, z); // Store target (Y is ignored)
@@ -207,37 +248,64 @@ export class AgentControls extends System {
         // Don't call stopNavigation here to avoid loops, just clear interval
         return;
     }
+    
     // --- Add check for player existence ---
     if (!this.world?.entities?.player) {
         logger.error("[Controls Navigation Tick] Cannot tick: Player entity not found.");
         this.stopNavigation("tick error - player missing");
         return;
     }
-    // ------------------------------------
-    if (!this._validatePlayerState("_navigationTick")) {
-        logger.warn("[Controls Navigation Tick] Tick skipped (player state invalid).");
-        this.stopNavigation("tick error - player state invalid");
+    
+    if (!this.world.entities.player.base) {
+        logger.error("[Controls Navigation Tick] Cannot tick: Player base not found.");
+        this.stopNavigation("tick error - player base missing");
         return;
     }
-    logger.debug(`[Controls Navigation Tick] Tick running. Target: (${this._navigationTarget.x.toFixed(2)}, ${this._navigationTarget.z.toFixed(2)})`);
-    // --- END DEBUG LOGS ---
-
-    // --- Incorporate user's fix: Create new Vec/Quat instances ---
-    const playerPosition = new THREE.Vector3().copy(this.world.entities.player.base.position);
-    const playerQuaternion = new THREE.Quaternion().copy(this.world.entities.player.base.quaternion);
-    logger.debug(`[Controls Navigation Tick] DEBUG: Current Pos: (${playerPosition.x.toFixed(2)}, ${playerPosition.y.toFixed(2)}, ${playerPosition.z.toFixed(2)})`);
-    logger.debug(`[Controls Navigation Tick] DEBUG: Current Quat: (${playerQuaternion.x.toFixed(2)}, ${playerQuaternion.y.toFixed(2)}, ${playerQuaternion.z.toFixed(2)}, ${playerQuaternion.w.toFixed(2)})`);
-    // -----------------------------------------------------------
-
+    
+    // Check for valid position and quaternion values
+    let playerPosition, playerQuaternion;
+    try {
+        const pos = this.world.entities.player.base.position;
+        const quat = this.world.entities.player.base.quaternion;
+        
+        // Check position has numeric values
+        if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number' || typeof pos.z !== 'number') {
+            logger.error("[Controls Navigation Tick] Invalid player position values.");
+            this.stopNavigation("tick error - invalid position values");
+            return;
+        }
+        
+        // Check quaternion has numeric values
+        if (!quat || typeof quat.x !== 'number' || typeof quat.y !== 'number' || 
+            typeof quat.z !== 'number' || typeof quat.w !== 'number') {
+            logger.error("[Controls Navigation Tick] Invalid player quaternion values.");
+            this.stopNavigation("tick error - invalid quaternion values");
+            return;
+        }
+        
+        // Create new THREE.Vector3 and Quaternion instances
+        playerPosition = new THREE.Vector3(pos.x, pos.y, pos.z);
+        playerQuaternion = new THREE.Quaternion(quat.x, quat.y, quat.z, quat.w);
+        
+        // Normalize quaternion to be safe
+        playerQuaternion.normalize();
+        
+        logger.debug(`[Controls Navigation Tick] Current Pos: (${playerPosition.x.toFixed(2)}, ${playerPosition.y.toFixed(2)}, ${playerPosition.z.toFixed(2)})`);
+        logger.debug(`[Controls Navigation Tick] Current Quat: (${playerQuaternion.x.toFixed(2)}, ${playerQuaternion.y.toFixed(2)}, ${playerQuaternion.z.toFixed(2)}, ${playerQuaternion.w.toFixed(2)})`);
+    } catch (e) {
+        logger.error(`[Controls Navigation Tick] Error accessing player state: ${e}`);
+        this.stopNavigation("tick error - exception accessing player state");
+        return;
+    }
+    
     // Check distance to target (XZ plane)
     const distanceXZ = playerPosition.clone().setY(0).distanceTo(this._navigationTarget.clone().setY(0));
-    logger.debug(`[Controls Navigation Tick] DEBUG: Distance to target: ${distanceXZ.toFixed(2)}m`);
+    logger.debug(`[Controls Navigation Tick] Distance to target: ${distanceXZ.toFixed(2)}m`);
 
     // --- Check if target reached --- >
     if (distanceXZ <= NAVIGATION_STOP_DISTANCE) {
       logger.info(`[Controls Navigation Tick] Target reached (distance ${distanceXZ.toFixed(2)} <= ${NAVIGATION_STOP_DISTANCE}).`);
       this.stopNavigation("reached target"); // Stop everything once target is reached
-      // TODO: Emit navigation completion event?
       return; // Stop further processing this tick
     }
     // <--------------------------------
@@ -245,52 +313,49 @@ export class AgentControls extends System {
     // --- Calculate Movement --- >
     const directionWorld = this._navigationTarget.clone().sub(playerPosition).setY(0).normalize();
     const forwardWorld = new THREE.Vector3(0, 0, -1).applyQuaternion(playerQuaternion).setY(0).normalize();
-    logger.debug(`[Controls Navigation Tick] DEBUG: Direction Vector: (${directionWorld.x.toFixed(2)}, ${directionWorld.y.toFixed(2)}, ${directionWorld.z.toFixed(2)})`);
-    logger.debug(`[Controls Navigation Tick] DEBUG: Forward Vector: (${forwardWorld.x.toFixed(2)}, ${forwardWorld.y.toFixed(2)}, ${forwardWorld.z.toFixed(2)})`);
+    logger.debug(`[Controls Navigation Tick] Direction Vector: (${directionWorld.x.toFixed(2)}, ${directionWorld.y.toFixed(2)}, ${directionWorld.z.toFixed(2)})`);
+    logger.debug(`[Controls Navigation Tick] Forward Vector: (${forwardWorld.x.toFixed(2)}, ${forwardWorld.y.toFixed(2)}, ${forwardWorld.z.toFixed(2)})`);
 
-    // Check for zero vectors or NaN
-    if (isNaN(forwardWorld.x) || isNaN(forwardWorld.y) || isNaN(forwardWorld.z) || forwardWorld.lengthSq() < 0.001) {
+    // Check for zero vectors or NaN values in calculations
+    if (Number.isNaN(forwardWorld.x) || Number.isNaN(forwardWorld.y) || Number.isNaN(forwardWorld.z) || forwardWorld.lengthSq() < 0.001) {
          logger.warn("[Controls Navigation Tick] Invalid player forward vector. Holding position.");
          this.setKey('keyW', false); this.setKey('keyA', false); this.setKey('keyD', false); this.setKey('keyS', false);
          this._currentNavKeys = { forward: false, backward: false, left: false, right: false };
          return;
     }
-     if (isNaN(directionWorld.x) || isNaN(directionWorld.y) || isNaN(directionWorld.z) || directionWorld.lengthSq() < 0.001) {
-          logger.warn("[Controls Navigation Tick] Invalid target direction vector (target likely same as current pos). Holding position.");
-          this.setKey('keyW', false); this.setKey('keyA', false); this.setKey('keyD', false); this.setKey('keyS', false);
-          this._currentNavKeys = { forward: false, backward: false, left: false, right: false };
-          // Optionally stop navigation if direction is invalid
-          // this.stopNavigation("invalid direction");
-          return;
-     }
+    
+    if (Number.isNaN(directionWorld.x) || Number.isNaN(directionWorld.y) || Number.isNaN(directionWorld.z) || directionWorld.lengthSq() < 0.001) {
+        logger.warn("[Controls Navigation Tick] Invalid target direction vector. Holding position.");
+        this.setKey('keyW', false); this.setKey('keyA', false); this.setKey('keyD', false); this.setKey('keyS', false);
+        this._currentNavKeys = { forward: false, backward: false, left: false, right: false };
+        return;
+    }
 
     const angle = forwardWorld.angleTo(directionWorld);
     const cross = new THREE.Vector3().crossVectors(forwardWorld, directionWorld);
     const signedAngle = cross.y < 0 ? -angle : angle;
-    logger.debug(`[Controls Navigation Tick] DEBUG: Angle: ${(angle * THREE.MathUtils.RAD2DEG).toFixed(1)} deg, Signed Angle: ${(signedAngle * THREE.MathUtils.RAD2DEG).toFixed(1)} deg, Cross Y: ${cross.y.toFixed(3)}`);
+    logger.debug(`[Controls Navigation Tick] Angle: ${(angle * THREE.MathUtils.RAD2DEG).toFixed(1)} deg, Signed Angle: ${(signedAngle * THREE.MathUtils.RAD2DEG).toFixed(1)} deg, Cross Y: ${cross.y.toFixed(3)}`);
 
     // --- Determine desired movement ---
     const forwardThreshold = Math.PI / 18; // ~10 degrees
     const turnThreshold = Math.PI / 4; // 45 degrees - turn in place if angle > this
-    let desiredKeys = { forward: false, backward: false, left: false, right: false };
+    const desiredKeys = { forward: false, backward: false, left: false, right: false };
     if (Math.abs(signedAngle) > turnThreshold) {
-      desiredKeys.forward = false;
       if (signedAngle < 0) { desiredKeys.left = true; } else { desiredKeys.right = true; }
-    }
-    else {
+    } else {
         desiredKeys.forward = true;
         if (Math.abs(signedAngle) > forwardThreshold) {
             if (signedAngle < 0) { desiredKeys.left = true; } else { desiredKeys.right = true; }
         }
     }
-    logger.debug(`[Controls Navigation Tick] DEBUG: Desired keys: F:${desiredKeys.forward}, L:${desiredKeys.left}, R:${desiredKeys.right}`);
+    logger.debug(`[Controls Navigation Tick] Desired keys: F:${desiredKeys.forward}, L:${desiredKeys.left}, R:${desiredKeys.right}`);
     // <--------------------------
 
     // --- Apply Keys --- >
-    if (desiredKeys.forward !== this._currentNavKeys.forward) { logger.debug(`[Controls Navigation Tick] DEBUG: Setting keyW to ${desiredKeys.forward}`); this.setKey('keyW', desiredKeys.forward); this._currentNavKeys.forward = desiredKeys.forward; }
-    if (desiredKeys.left !== this._currentNavKeys.left) { logger.debug(`[Controls Navigation Tick] DEBUG: Setting keyA to ${desiredKeys.left}`); this.setKey('keyA', desiredKeys.left); this._currentNavKeys.left = desiredKeys.left; }
-    if (desiredKeys.right !== this._currentNavKeys.right) { logger.debug(`[Controls Navigation Tick] DEBUG: Setting keyD to ${desiredKeys.right}`); this.setKey('keyD', desiredKeys.right); this._currentNavKeys.right = desiredKeys.right; }
-    if (this._currentNavKeys.backward) { logger.debug(`[Controls Navigation Tick] DEBUG: Setting keyS to false`); this.setKey('keyS', false); this._currentNavKeys.backward = false; }
+    if (desiredKeys.forward !== this._currentNavKeys.forward) { this.setKey('keyW', desiredKeys.forward); this._currentNavKeys.forward = desiredKeys.forward; }
+    if (desiredKeys.left !== this._currentNavKeys.left) { this.setKey('keyA', desiredKeys.left); this._currentNavKeys.left = desiredKeys.left; }
+    if (desiredKeys.right !== this._currentNavKeys.right) { this.setKey('keyD', desiredKeys.right); this._currentNavKeys.right = desiredKeys.right; }
+    if (this._currentNavKeys.backward) { this.setKey('keyS', false); this._currentNavKeys.backward = false; }
     this.setKey('shiftLeft', false);
     // <-------------------
   }
@@ -314,11 +379,11 @@ export class AgentControls extends System {
       this._randomWalkIntervalMs = intervalMs;
       this._randomWalkMaxDistance = maxDistance;
 
-      // Start the first leg shortly
-      setTimeout(() => this._randomWalkTick(), 100);
-
-      // Set interval for subsequent legs
+      // Set up the interval immediately - we'll handle player availability in the tick
       this._randomWalkIntervalId = setInterval(() => this._randomWalkTick(), this._randomWalkIntervalMs);
+      
+      // Also fire first tick immediately
+      setTimeout(() => this._randomWalkTick(), 100);
   }
 
   /**
@@ -354,12 +419,37 @@ export class AgentControls extends System {
    */
   private _randomWalkTick(): void {
       if (!this._isWalkingRandomly) return; // Stop if flag was turned off
-      if (!this._validatePlayerState("_randomWalkTick")) {
-         this.stopRandomWalk("tick error - player state invalid"); // Stop the random walk itself
-         return;
-      }
+      
+      // Define default position
+      const DEFAULT_POSITION = { x: 0, y: 0, z: 0 };
 
-      const currentPos = this.world.entities.player.base.position as THREE.Vector3;
+      // Try to get player position in a safer way
+      let playerPos;
+      try {
+          // Check for player existence first
+          if (!this.world?.entities?.player?.base) {
+              logger.warn("[Controls Random Walk Tick] Player entity or base not available yet. Using default position.");
+              playerPos = DEFAULT_POSITION;
+          } else {
+              // Access position object - only require it to have x,y,z properties
+              const pos = this.world.entities.player.base.position;
+              
+              if (pos && typeof pos.x === 'number' && typeof pos.y === 'number' && typeof pos.z === 'number') {
+                  // Position looks valid, use it
+                  playerPos = { x: pos.x, y: pos.y, z: pos.z };
+                  logger.debug(`[Controls Random Walk Tick] Found valid player position: (${playerPos.x.toFixed(2)}, ${playerPos.y.toFixed(2)}, ${playerPos.z.toFixed(2)})`);
+              } else {
+                  logger.warn("[Controls Random Walk Tick] Player position invalid or incomplete. Using default position.");
+                  playerPos = DEFAULT_POSITION;
+              }
+          }
+      } catch (e) {
+          logger.error(`[Controls Random Walk Tick] Error accessing player position: ${e}. Using default position.`);
+          playerPos = DEFAULT_POSITION;
+      }
+      
+      // Create a proper THREE.Vector3 for the current position
+      const currentPos = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
 
       // Generate random offset
       const randomAngle = Math.random() * Math.PI * 2;
@@ -370,6 +460,7 @@ export class AgentControls extends System {
       const targetZ = currentPos.z + offsetZ;
 
       logger.info(`[Controls Random Walk Tick] New target: (${targetX.toFixed(2)}, ${targetZ.toFixed(2)})`);
+      
       // Call navigateTo, which will handle stopping the previous leg
       this.navigateTo(targetX, targetZ);
   }
@@ -416,7 +507,115 @@ export class AgentControls extends System {
        return true;
   }
 
-  // Dummy methods
+  // --- Jump Methods --- >
+
+  /**
+   * Makes the agent jump if not already jumping and cooldown has elapsed
+   * Uses a different approach that doesn't trigger Hyperfy errors
+   */
+  public jump(): void {
+    // Check if player exists and is ready
+    if (!this.world?.entities?.player) {
+      logger.error("[Controls Jump] Cannot jump: Player entity not found.");
+      return;
+    }
+    
+    // Check if already jumping
+    if (this._isJumping) {
+      logger.debug("[Controls Jump] Already jumping, ignoring jump request");
+      return;
+    }
+    
+    const currentTime = Date.now();
+    if (currentTime - this._lastJumpTime < this._jumpCooldown) {
+      logger.debug("[Controls Jump] Jump on cooldown");
+      return;
+    }
+    
+    // Mark as jumping but DON'T use the space key directly
+    this._isJumping = true;
+    this._lastJumpTime = currentTime;
+    logger.info("[Controls Jump] Initiating jump");
+    
+    try {
+      // Try to use a safer direct method if available
+      if (typeof this.world.entities.player.jump === 'function') {
+        this.world.entities.player.jump();
+      } else {
+        // Try to move the player up directly without using the space key
+        const currentPos = this.world.entities.player.base.position;
+        const targetY = currentPos.y + 0.5; // Small jump height
+        
+        // Use a tween or direct position update if available
+        if (typeof this.world.tween === 'function') {
+          this.world.tween({
+            target: this.world.entities.player.base.position,
+            y: [currentPos.y, targetY, currentPos.y],
+            duration: 0.5,
+            ease: 'easeOutQuad'
+          });
+        }
+      }
+    } catch (e) {
+      logger.error("[Controls Jump] Error performing jump:", e);
+    }
+    
+    // Reset jumping state after a delay
+    setTimeout(() => {
+      this._isJumping = false;
+      logger.debug("[Controls Jump] Jump state reset");
+    }, 800);
+  }
+
+  /**
+   * Toggles the agent's crouch state
+   */
+  public toggleCrouch(): void {
+    if (!this._validatePlayerState("crouch")) {
+      return;
+    }
+    
+    this._isCrouching = !this._isCrouching;
+    logger.info(`[Controls Crouch] ${this._isCrouching ? "Crouching" : "Standing up"}`);
+    
+    // Toggle control left key (assuming this is the crouch key in Hyperfy)
+    this.setKey('controlLeft', this._isCrouching);
+    
+    // If we're jumping, cancel crouch
+    if (this._isJumping && this._isCrouching) {
+      this._isCrouching = false;
+      this.setKey('controlLeft', false);
+    }
+    
+    try {
+      // Adjust player height if Hyperfy supports this
+      if (this.world?.entities?.player?.base) {
+        const height = this._isCrouching ? this._crouchHeight : this._normalHeight;
+        // This would require Hyperfy to support height adjustment - may need alternative
+        if (typeof this.world.entities.player.setHeight === 'function') {
+          this.world.entities.player.setHeight(height);
+        }
+      }
+    } catch (e) {
+      logger.error("[Controls Crouch] Error adjusting player height:", e);
+    }
+  }
+
+  /**
+   * Gets whether the agent is currently jumping
+   */
+  public getIsJumping(): boolean {
+    return this._isJumping;
+  }
+
+  /**
+   * Gets whether the agent is currently crouching
+   */
+  public getIsCrouching(): boolean {
+    return this._isCrouching;
+  }
+
+  // Dummy methods should be grouped together
   bind(options: any) { return this; }
   release() { }
   setActions() { }
