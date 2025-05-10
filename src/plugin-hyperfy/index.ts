@@ -13,6 +13,7 @@ import { hyperfyUseNearestObjectAction } from './actions/use';
 import { hyperfyStopMovingAction } from './actions/stop';
 import { hyperfyWalkRandomlyAction } from './actions/walk_randomly';
 import { hyperfyProvider } from './providers/world';
+import { hyperfyEmoteProvider } from './providers/emote';
 
 // --- Hardcoded values matching agent/index.mjs ---
 const HYPERFY_WS_URL = process.env.WS_URL || 'wss://chill.hyperfy.xyz/ws'
@@ -148,7 +149,8 @@ export const hyperfyPlugin: Plugin = {
       hyperfyWalkRandomlyAction
   ],
   providers: [
-      hyperfyProvider // Register the Hyperfy provider
+      hyperfyProvider, // Register the Hyperfy provider
+      hyperfyEmoteProvider
   ],
 };
 

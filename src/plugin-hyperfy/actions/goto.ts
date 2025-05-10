@@ -17,9 +17,11 @@ import { AgentControls } from '../controls'; // Import AgentControls type
 
 // Define a simple template for entity extraction
 const entityExtractionTemplate = `
-# Task: Identify the target entity ID based on the user message and the list of entities.
+# Task: Identify the target Hyperfy Entity ID based on the user message and the Hyperfy World State.
+# Do NOT use person IDs. Use only the Hyperfy Entity IDs listed in the Hyperfy World State.
+
 {{providers}}
-# Instructions: Examine the user message: "{{messageText}}". Identify the entity ID the user wants to navigate to from the list of entities provided in the context. Respond with only the entity ID.
+# Instructions: Examine the user message: "{{messageText}}". Identify the Hyperfy Entity ID the user wants to navigate to from the list of entities provided in the context. Respond with only the Hyperfy Entity ID.
 
 Response format should be a valid JSON block like this:
 \`\`\`json

@@ -8,11 +8,12 @@ import {
     logger
 } from '@elizaos/core';
 import { HyperfyService } from '../service';
+import * as THREE from 'three'
+import { Vector3Enhanced } from '../hyperfy/src/core/extras/Vector3Enhanced.js'
 
 export const hyperfyProvider: Provider = {
     name: 'HYPERFY_WORLD_STATE',
     description: 'Provides current entity positions/rotations and agent state in the connected Hyperfy world.',
-    dynamic: true,
     get: async (runtime: IAgentRuntime, _message: Memory): Promise<ProviderResult> => {
       const service = runtime.getService<HyperfyService>(HyperfyService.serviceType);
   
@@ -38,34 +39,30 @@ export const hyperfyProvider: Provider = {
   
         // Format entities from the map
         const entityLines: string[] = [];
-        const maxEntitiesToShow = 10;
-        let count = 0;
+        const world = service?.getWorld();
+        const entities = world?.entities?.items;
         // Iterate over the entities Map from the service state
-        for (const [id, entityState] of state.entities.entries()) {
-             if (count >= maxEntitiesToShow) break;
-
-             // Use service.getEntityName to get name (checks map first)
-             // Use type or 'unknown' as fallback if name is null/undefined
-             const name = service.getEntityName(id) || entityState.type || 'unknown';
-
-             // Position from our internal state map
-             const posArr = entityState.position;
-             const pos = posArr ? posArr.map((p: number) => p.toFixed(2)).join(', ') : 'N/A';
-
-             const shortId = typeof id === 'string' ? `${id.substring(0, 6)}...` : id;
+        for (const [id, entity] of entities.entries()) {
+             const position = entity?.base?.position;
+             const name = entity?.data?.name;
+             const type = entity?.data?.type;
+             
+             let pos = 'N/A';
+             if (position && (position instanceof THREE.Vector3 || position instanceof Vector3Enhanced)) {
+                pos = [position.x, position.y, position.z].map(p => p.toFixed(2)).join(', ');
+             }
              // Include type in parenthesis if different from name
-             const typeInfo = (entityState.type && entityState.type !== name) ? ` (${entityState.type})` : '';
+             const typeInfo = (type && type !== name) ? ` (${type})` : '';
 
-             entityLines.push(`- ${shortId} (${name}${typeInfo}): Pos(${pos})`);
-             count++;
+             entityLines.push(`- Hyperfy Entity ID: ${id} (${name}${typeInfo}): Pos(${pos})`);
         }
 
-        const entityText = state.entities.size > 0
-            ? `Entities (${state.entities.size} total, showing up to ${maxEntitiesToShow}):\n${entityLines.join('\n')}`
+        const entityText = entities?.size > 0
+            ? `Entities (${entities?.size} total):\n${entityLines.join('\n')}`
             : 'Entities: None found';
   
   
-        const formattedText = `# Hyperfy World State\nStatus: ${state.status}\n${agentText}\n${entityText}`;
+        const formattedText = `\n\n# Hyperfy World State\nStatus: ${state.status}\n${agentText}\n${entityText} \n\n`;
   
         // Prepare data for values and raw data
         // Convert map to a more serializable object for the data field

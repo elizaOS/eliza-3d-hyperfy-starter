@@ -1,0 +1,4 @@
+[submodule "src/plugin-hyperfy/hyperfy"]
+	path = src/plugin-hyperfy/hyperfy
+	url = https://github.com/tcm390/hyperfy.git
+	branch = node-client
