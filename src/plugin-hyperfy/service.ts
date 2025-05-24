@@ -423,7 +423,6 @@ export class HyperfyService extends Service {
               await this.runtime.updateEntity(entity)
             }
             // this.behaviorManager.start();
-            this.puppeteerManager.start();
             
              // --- Set Name (if not already done) ---
              if (!pollingTasks.name) {

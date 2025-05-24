@@ -1,7 +1,7 @@
 ////@ts-nocheck
 import path from 'path'
 import puppeteer from 'puppeteer'
-import { IAgentRuntime, logger } from '@elizaos/core'
+import { IAgentRuntime, ModelType } from '@elizaos/core'
 import { HyperfyService } from '../service.js'
 
 export class PuppeteerManager {
@@ -61,93 +61,142 @@ export class PuppeteerManager {
     return this.initPromise
   }
 
+  public async describeScene(): Promise<Record<"front" | "back" | "left" | "right" | "top", { title: string; description: string }>> {
+  
+    // 1. take screenshots in-memory
+    const views = await this.snapshotViews();
+  
+    // 2. send each view to the IMAGE_DESCRIPTION model
+    const entries = await Promise.all(
+      (Object.entries(views) as [keyof typeof views, string][]).map(
+        async ([name, base64]) => {
+          const dataUrl = `data:image/png;base64,${base64}`;
+  
+          /**  
+           *  runtime.useModel will hit the OpenAI plugin you pasted
+           *  above.  It accepts either a URL **or** a data-URI, so the
+           *  `data:image/png;base64,…` form works out of the box.
+           */
+          const result = await this.runtime.useModel(ModelType.IMAGE_DESCRIPTION, {
+            imageUrl: dataUrl,
+            prompt: `You are looking at the ${name} view of a 3-D scene captured from a game engine. Describe what the player can see from this perspective.`
+          });
+  
+          return [name, result as { title: string; description: string }];
+        })
+    );
+  
+    // 3. turn the array back into an object and return
+    return Object.fromEntries(entries) as any;
+  }
+
   private getService() {
     return this.runtime.getService<HyperfyService>(HyperfyService.serviceType)
   }
 
-  public async start() {
-    await this.init()
-    
-    const runLoop = async () => {
-      while (true) {
-        try {
-          const service = this.getService();
-          const world = service.getWorld();
-          const sceneJson = world.stage.scene.toJSON()
+  private async rehydrateSceneTextures() {
+    const service = this.getService()
+    const world = service.getWorld()
+    const sceneJson = world.stage.scene.toJSON()
 
-          await this.updatePlayerCamera()
-          const STRIP_SLOTS = this.STRIP_SLOTS;
-          await this.page.evaluate(async (sceneJson, STRIP_SLOTS) => {
-            const loader = new window.THREE.ObjectLoader()
-            const loadedScene = loader.parse(sceneJson)
+    const STRIP_SLOTS = this.STRIP_SLOTS;
+    await this.page.evaluate(async (sceneJson, STRIP_SLOTS) => {
+      const loader = new window.THREE.ObjectLoader()
+      const loadedScene = loader.parse(sceneJson)
 
-            loadedScene.traverse(obj => {
-              if (!obj.isMesh || !obj.material) return;
+      loadedScene.traverse(obj => {
+        if (!obj.isMesh || !obj.material) return;
 
-              const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
 
-              mats.forEach(mat => {
-                const id = mat.userData.materialId;
-                if (!id) return;
+        mats.forEach(mat => {
+          const id = mat.userData.materialId;
+          if (!id) return;
 
-                STRIP_SLOTS.forEach(slot => {
-                  const key = `${id}:${slot}`;
-                  const tex = window.texturesMap?.get(key);
-                  if (tex && tex.isTexture) mat[slot] = tex;
-                });
+          STRIP_SLOTS.forEach(slot => {
+            const key = `${id}:${slot}`;
+            const tex = window.texturesMap?.get(key);
+            if (tex && tex.isTexture) mat[slot] = tex;
+          });
 
-                mat.needsUpdate = true;
-              });
-            });
+          mat.needsUpdate = true;
+        });
+      });
 
-            window.scene = loadedScene
+      window.scene = loadedScene
 
-            // Ensure renderer updates
-            window.renderer.render(window.scene, window.camera)
-          }, sceneJson, STRIP_SLOTS)
-          
-        } catch (err) {
-          logger.error('SceneManager update error:', err)
-        }
-        await new Promise(resolve => setTimeout(resolve, 3000))
-      }
-    }
-
-    runLoop()
-
+      // Ensure renderer updates
+      window.renderer.render(window.scene, window.camera)
+    }, sceneJson, STRIP_SLOTS)
   }
 
-  
+  public async snapshotViews(): Promise<Record<string, string>> {
+    await this.init();
 
-  async updatePlayerCamera() {
-    const service = this.getService();
-    const world = service.getWorld();
-    const player = world.entities.player;
+    const service = this.getService()
+    const world = service.getWorld()
+    const player = world.entities.player
+
     if (!player) {
-      return;
+      throw new Error('Player entity not yet available')
     }
+    
+    await this.rehydrateSceneTextures()
+
     const playerData = {
-      position: {
-        x: player.base.position.x,
-        y: player.base.position.y,
-        z: player.base.position.z,
-      },
-      quaternion: {
-        x: player.base.quaternion.x,
-        y: player.base.quaternion.y,
-        z: player.base.quaternion.z,
-        w: player.base.quaternion.w,
-      }
+      position: player.base.position.toArray(),
+      quaternion: [player.base.quaternion.x, player.base.quaternion.y, player.base.quaternion.z, player.base.quaternion.w] as const
     }
 
-    await this.page.evaluate(player => {
-      const camera = window.camera
-      const position = new window.THREE.Vector3(player.position.x, player.position.y + 1, player.position.z)
-      const quaternion = new window.THREE.Quaternion(player.quaternion.x, player.quaternion.y, player.quaternion.z, player.quaternion.w)
-      camera.position.copy(position)
-      camera.position.y += 2;
-      camera.quaternion.copy(quaternion)
-    }, playerData)
+    const VIEWS: Array<{ name: 'front' | 'back' | 'left' | 'right' | 'top'; yaw: number; pitch: number }> = [
+      { name: 'front',  yaw:   0,            pitch: 0 },
+      { name: 'right',  yaw:  -Math.PI / 2,  pitch: 0 },
+      { name: 'back',   yaw:   Math.PI,      pitch: 0 },
+      { name: 'left',   yaw:   Math.PI / 2,  pitch: 0 },
+      { name: 'top',    yaw:   0,            pitch:  Math.PI / 2 }
+    ]
+
+    const screenshots: Record<string, string> = {}
+
+    for (const view of VIEWS) {
+      await this.page.evaluate(({ playerData, view }) => {
+        const win = window as any
+        const THREE = win.THREE as typeof import('three')
+        const camera   = win.camera as import('three').PerspectiveCamera
+        const renderer = win.renderer as import('three').WebGLRenderer
+
+        // ---------------------------------------------
+        // Cache initialisation – happens only once
+        // ---------------------------------------------
+        win.__pmCache = win.__pmCache || {}
+        const c = win.__pmCache
+        c.eyePos   = c.eyePos   || new THREE.Vector3()
+        c.baseQuat = c.baseQuat || new THREE.Quaternion()
+        c.viewQuat = c.viewQuat || new THREE.Quaternion()
+        c.tmpQuat  = c.tmpQuat  || new THREE.Quaternion()
+        c.euler    = c.euler    || new THREE.Euler()
+
+        // ---------------------------------------------
+        // Update cached objects with current frame data
+        // ---------------------------------------------
+        c.eyePos.set(playerData.position[0], playerData.position[1] + 2, playerData.position[2])
+        camera.position.copy(c.eyePos)
+
+        c.baseQuat.set(playerData.quaternion[0], playerData.quaternion[1], playerData.quaternion[2], playerData.quaternion[3])
+        c.euler.set(view.pitch, view.yaw, 0, 'YXZ')
+        c.viewQuat.setFromEuler(c.euler)
+
+        // result = base * view  (store in tmpQuat so baseQuat stays intact)
+        c.tmpQuat.copy(c.baseQuat).multiply(c.viewQuat)
+        camera.quaternion.copy(c.tmpQuat)
+
+        renderer.render(win.scene, camera)
+      }, { playerData, view })
+
+      screenshots[view.name] = await this.page.screenshot({ encoding: 'base64', type: 'png' }) as string
+    }
+
+    return screenshots as Record<'front' | 'back' | 'left' | 'right' | 'top', string>
   }
 
   async loadGlbBytes(url: string): Promise<number[]> {
@@ -155,8 +204,8 @@ export class PuppeteerManager {
     const STRIP_SLOTS = this.STRIP_SLOTS;
 
     return this.page.evaluate(async (url, STRIP_SLOTS) => {
-      const loader   = new window.THREE.GLTFLoader();
-      const gltf     = await loader.loadAsync(url);
+      const loader = new window.THREE.GLTFLoader();
+      const gltf = await loader.loadAsync(url);
 
       if (!window.texturesMap) window.texturesMap = new Map();
 
@@ -184,7 +233,7 @@ export class PuppeteerManager {
       });
 
       const exporter = new window.THREE.GLTFExporter();
-      const buffer   = await new Promise<ArrayBuffer>((done) =>
+      const buffer = await new Promise<ArrayBuffer>((done) =>
         exporter.parse(gltf.scene, done, { binary: true, embedImages: true })
       );
 

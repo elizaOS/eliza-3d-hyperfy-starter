@@ -115,9 +115,6 @@ export const hyperfyProvider: Provider = {
 
         const entitiesData = Object.fromEntries(state.entities);
 
-        console.log("debuggggg", formattedText)
-        
-
         return {
           text: formattedText,
           values: { // Simplified values for quick access
