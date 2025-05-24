@@ -30,6 +30,7 @@ import { BehaviorManager } from "./managers/behavior-manager.js"
 import { EmoteManager } from './managers//emote-manager.js'
 import { MessageManager } from './managers//message-manager.js'
 import { VoiceManager } from './managers//voice-manager.js'
+import { SceneManager } from './managers/scene-manager.js'
 import { hashFileBuffer } from './utils'
 
 const LOCAL_AVATAR_PATH = process.env.HYPERFY_AGENT_AVATAR_PATH || './avatar.vrm'
@@ -73,6 +74,7 @@ export class HyperfyService extends Service {
   private emoteManager: EmoteManager;
   private messageManager: MessageManager;
   private voiceManager: VoiceManager;
+  private sceneManager: SceneManager;
 
   public get currentWorldId(): UUID | null {
     return this._currentWorldId
@@ -173,8 +175,21 @@ export class HyperfyService extends Service {
 
     try {
       const world = createNodeClientWorld()
-      this.world = world
-      ;(world as any).playerNamesMap = this.playerNamesMap
+      this.world = world;
+
+      // (world as any).network.onEntityAdded = data => {
+      //   console.log("hacckckckkckc", data)
+      //   this.world.entities.add(data)
+      // }
+    
+      // (world as any).network.onEntityModified = data => {
+      //   console.log("hack debuggggg", data)
+      //   const entity = this.world.entities.get(data.id)
+      //   if (!entity) return console.error('onEntityModified: no entity found', data)
+      //   entity.modify(data)
+      // }
+
+      (world as any).playerNamesMap = this.playerNamesMap
 
       globalThis.self = globalThis
 
@@ -190,9 +205,12 @@ export class HyperfyService extends Service {
       ;(world as any).controls = this.controls
       world.systems.push(this.controls)
       // Temporarily comment out AgentLoader to test for updateTransform error
+
+      this.sceneManager = new SceneManager(this.runtime);
       const loader = new AgentLoader(world)
       ;(world as any).loader = loader
       world.systems.push(loader);
+      loader.sceneManager = this.sceneManager;
 
       // HACK: Overwriting `chat.add` to prevent crashes caused by the original implementation.
       // This ensures safe handling of chat messages and avoids unexpected errors from undefined fields.
@@ -217,6 +235,50 @@ export class HyperfyService extends Service {
           this.world.network.send('chatAdded', msg)
         }
       };
+      
+      // const originalAdd = world.stage.scene.add.bind(world.stage.scene)
+      // world.stage.scene.add = (item) => {
+      //   console.log("Item added to scene:")
+        
+      //   const scene = world.stage.scene.clone();
+      //   scene.traverse(function(object) {
+
+      //     if ( object.isMesh ) {
+  
+      //         object.material = object.material.clone();
+  
+      //     }
+         
+  
+      //   });
+      //   this.sceneManager.addItem(scene);
+      //   return originalAdd(item)
+      // }
+
+      // (world as any).entities.deserialize = (datas: any) => {
+      //   for (const data of datas) {
+      //     (world as any).entities.add(data)
+      //   }
+      //   (world as any).entities.items.forEach((value, key) => {
+      //     console.log("hohohohoh", key)
+      //     console.log(value.data);
+      //     this.sceneManager.entityAdd(value);
+      //   })
+      // }
+
+      // (world as any).network.onEntityAdded = data => {
+      //   (world as any).entities.add(data)
+        
+      //   this.sceneManager.entityAdd(data);
+      // }
+    
+      // (world as any).network.onEntityModified = data => {
+      //   const entity = (world as any).entities.get(data.id)
+      //   if (!entity) return console.error('onEntityModified: no entity found', data)
+      //   entity.modify(data)
+        
+      //   this.sceneManager.entityUpdate(entity);
+      // }
 
       const mockElement = {
         appendChild: () => {},
@@ -282,6 +344,8 @@ export class HyperfyService extends Service {
       this.emoteManager = new EmoteManager(this.runtime);
       this.messageManager = new MessageManager(this.runtime);
       this.voiceManager = new VoiceManager(this.runtime);
+      
+      // this.sceneManager.start()
 
       this.behaviorManager = new BehaviorManager(this.runtime);
       
@@ -497,7 +561,8 @@ export class HyperfyService extends Service {
               
               await this.runtime.updateEntity(entity)
             }
-            this.behaviorManager.start();
+            // this.behaviorManager.start();
+            this.sceneManager.start();
             
              // --- Set Name (if not already done) ---
              if (!pollingTasks.name) {
@@ -1018,5 +1083,9 @@ export class HyperfyService extends Service {
 
   getVoiceManager() {
     return this.voiceManager;
+  }
+
+  getSceneManager() {
+    return this.sceneManager;
   }
 }

@@ -75,7 +75,7 @@ export class AgentControls extends System {
     super(world); // Call base System constructor
 
     const commonKeys = [
-      'keyW', 'keyA', 'keyS', 'keyD', 'space', 'shiftLeft', 'shiftRight',
+      'keyW', 'keyA', 'keyS', 'keyD', 'keyQ', 'space', 'shiftLeft', 'shiftRight',
       'controlLeft', 'keyC', 'keyF', 'keyE', 'keyX', 'arrowUp', 'arrowDown',
       'arrowLeft', 'arrowRight', 'touchA', 'touchB', 'xrLeftStick',
       'xrRightStick', 'xrLeftBtn1', 'xrLeftBtn2', 'xrRightBtn1', 'xrRightBtn2',
