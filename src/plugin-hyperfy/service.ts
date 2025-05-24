@@ -37,8 +37,6 @@ const LOCAL_AVATAR_PATH = process.env.HYPERFY_AGENT_AVATAR_PATH || './avatar.vrm
 
 const HYPERFY_WS_URL = process.env.WS_URL || 'wss://chill.hyperfy.xyz/ws'
 const HYPERFY_TICK_RATE = 50
-const HYPERFY_TEST_MODE_MOVE_INTERVAL = 1000
-const HYPERFY_TEST_MODE_CHAT_INTERVAL = 5000
 const HYPERFY_APPEARANCE_POLL_INTERVAL = 30000
 const HYPERFY_ENTITY_UPDATE_INTERVAL = 1000
 
@@ -59,17 +57,12 @@ export class HyperfyService extends Service {
 
   private randomMoveIntervalId: NodeJS.Timeout | null = null
   private randomChatIntervalId: NodeJS.Timeout | null = null
-  private currentMoveKey: string | null = null
-
+ 
   private playerNamesMap: Map<string, string> = new Map()
   private appearanceIntervalId: NodeJS.Timeout | null = null
   private appearanceSet: boolean = false
   private nameSet: boolean = false
-  private PHYSX: any = null
-  private isPhysicsSetup: boolean = false
   private connectionTime: number | null = null
-  private emoteHashMap: Map<string, string> = new Map();
-  private currentEmoteTimeout: NodeJS.Timeout | null = null;
   private behaviorManager: BehaviorManager;
   private emoteManager: EmoteManager;
   private messageManager: MessageManager;
@@ -122,7 +115,6 @@ export class HyperfyService extends Service {
     this._currentWorldId = config.worldId
     this.appearanceSet = false
     this.nameSet = false
-    this.isPhysicsSetup = false
 
     try {
       const world = createNodeClientWorld()
@@ -557,8 +549,6 @@ export class HyperfyService extends Service {
       this.agentState = { position: null, rotation: null }
       this.wsUrl = null
       this.appearanceSet = false
-      this.isPhysicsSetup = false
-      this.PHYSX = null
 
       this.processedMsgIds.clear()
 
