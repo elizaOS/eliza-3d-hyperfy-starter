@@ -31,11 +31,13 @@ When using REPLY or HYPERFY_AMBIENT_SPEECH, the spoken message in the "text" fie
 ${HYPERFY_ACTIONS.map(
   (a) => `- **${a.name}**: ${a.description}`
 ).join('\n')}
-</providers>
+
 
 ---
 
 {{hyperfyStatus}}
+
+</providers>
 
 <keys>
 "thought" should be a short description of what the agent is thinking about and planning.

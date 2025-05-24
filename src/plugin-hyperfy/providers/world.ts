@@ -114,7 +114,6 @@ export const hyperfyProvider: Provider = {
           `# Hyperfy World State\n\n${agentText}${categorizedSummary}\n\n${actionText}\n\n${equipText}\n\n${chatText}\n\n${animationText}`;
 
         const entitiesData = Object.fromEntries(state.entities);
-        
 
         return {
           text: formattedText,
