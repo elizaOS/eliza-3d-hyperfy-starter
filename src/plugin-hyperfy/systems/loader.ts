@@ -6,7 +6,7 @@ import { GLTFLoader } from "../hyperfy/src/core/libs/gltfloader/GLTFLoader.js";
 import { glbToNodes } from "../hyperfy/src/core/extras/glbToNodes.js";
 import { createEmoteFactory } from "../hyperfy/src/core/extras/createEmoteFactory.js";
 import { AgentAvatar } from "./avatar.js";
-import { SceneManager } from "../managers/scene-manager.js";
+import { PuppeteerManager } from "../managers/puppeteer-manager.js";
 // import { VRMLoaderPlugin } from "@pixiv/three-vrm";
 // --- Mock Browser Environment for Loaders ---
 // These might need adjustment based on GLTFLoader/VRMLoaderPlugin requirements
@@ -57,7 +57,6 @@ export class AgentLoader extends System {
   results: Map<any, any>;
   gltfLoader: GLTFLoader;
   dummyScene: any;
-  sceneManager: SceneManager
   constructor(world) {
     super(world);
     this.promises = new Map();
@@ -188,7 +187,8 @@ export class AgentLoader extends System {
   }
 
   async parseGLB(type: string, key: string, url: string) {
-    const bytes = await this.sceneManager.loadGlbBytes(url);
+    const puppeteerManager = PuppeteerManager.getInstance()
+    const bytes = await puppeteerManager.loadGlbBytes(url);
     const arrayBuffer = Uint8Array.from(bytes).buffer;
   
     const gltf: THREE.GLTF = await new Promise((ok, bad) =>

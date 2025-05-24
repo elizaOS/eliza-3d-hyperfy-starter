@@ -1,11 +1,12 @@
 ////@ts-nocheck
-import fs from 'fs/promises'
 import path from 'path'
 import puppeteer from 'puppeteer'
 import { IAgentRuntime, logger } from '@elizaos/core'
 import { HyperfyService } from '../service.js'
 
-export class SceneManager {
+export class PuppeteerManager {
+  private static instance: PuppeteerManager | null = null
+  
   private runtime: IAgentRuntime
   private browser: puppeteer.Browser
   private page: puppeteer.Page
@@ -21,6 +22,19 @@ export class SceneManager {
   constructor(runtime: IAgentRuntime) {
     this.runtime = runtime
     this.init()
+
+    if (!PuppeteerManager.instance) {
+      PuppeteerManager.instance = this
+    } else {
+      throw new Error('PuppeteerManager has already been instantiated.')
+    }
+  }
+
+  public static getInstance(): PuppeteerManager {
+    if (!this.instance) {
+      throw new Error('PuppeteerManager not yet initialized. Call new PuppeteerManager(runtime) first.')
+    }
+    return this.instance
   }
 
   private async init() {
@@ -53,40 +67,53 @@ export class SceneManager {
 
   public async start() {
     await this.init()
-    const service = this.getService();
-    const world = service.getWorld();
-    const sceneJson = world.stage.scene.toJSON()
+    
+    const runLoop = async () => {
+      while (true) {
+        try {
+          const service = this.getService();
+          const world = service.getWorld();
+          const sceneJson = world.stage.scene.toJSON()
 
-    await this.updatePlayerCamera()
-    const STRIP_SLOTS = this.STRIP_SLOTS;
-    await this.page.evaluate(async (sceneJson, STRIP_SLOTS) => {
-      const loader = new window.THREE.ObjectLoader()
-      const loadedScene = loader.parse(sceneJson)
+          await this.updatePlayerCamera()
+          const STRIP_SLOTS = this.STRIP_SLOTS;
+          await this.page.evaluate(async (sceneJson, STRIP_SLOTS) => {
+            const loader = new window.THREE.ObjectLoader()
+            const loadedScene = loader.parse(sceneJson)
 
-      loadedScene.traverse(obj => {
-        if (!obj.isMesh || !obj.material) return;
+            loadedScene.traverse(obj => {
+              if (!obj.isMesh || !obj.material) return;
 
-        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+              const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
 
-        mats.forEach(mat => {
-          const id = mat.userData.materialId;
-          if (!id) return;
+              mats.forEach(mat => {
+                const id = mat.userData.materialId;
+                if (!id) return;
 
-          STRIP_SLOTS.forEach(slot => {
-            const key = `${id}:${slot}`;
-            const tex = window.texturesMap?.get(key);
-            if (tex && tex.isTexture) mat[slot] = tex;
-          });
+                STRIP_SLOTS.forEach(slot => {
+                  const key = `${id}:${slot}`;
+                  const tex = window.texturesMap?.get(key);
+                  if (tex && tex.isTexture) mat[slot] = tex;
+                });
 
-          mat.needsUpdate = true;
-        });
-      });
+                mat.needsUpdate = true;
+              });
+            });
 
-      window.scene = loadedScene
+            window.scene = loadedScene
 
-      // Ensure renderer updates
-      window.renderer.render(window.scene, window.camera)
-    }, sceneJson, STRIP_SLOTS)
+            // Ensure renderer updates
+            window.renderer.render(window.scene, window.camera)
+          }, sceneJson, STRIP_SLOTS)
+          
+        } catch (err) {
+          logger.error('SceneManager update error:', err)
+        }
+        await new Promise(resolve => setTimeout(resolve, 3000))
+      }
+    }
+
+    runLoop()
 
   }
 
