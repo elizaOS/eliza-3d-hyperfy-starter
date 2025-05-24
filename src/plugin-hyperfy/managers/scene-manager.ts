@@ -9,7 +9,6 @@ export class SceneManager {
   private runtime: IAgentRuntime
   private browser: puppeteer.Browser
   private page: puppeteer.Page
-  private loadedItems = new Set<string>()
   private initPromise: Promise<void> | null = null
   private readonly STRIP_SLOTS = [
     'map', 'aoMap', 'alphaMap',
@@ -41,8 +40,7 @@ export class SceneManager {
         await this.page.waitForFunction(() =>
           window.THREE !== undefined && 
           window.scene !== undefined && 
-          window.camera !== undefined &&
-          window.loadedModels !== undefined
+          window.camera !== undefined
         )
       })()
     }
@@ -51,66 +49,6 @@ export class SceneManager {
 
   private getService() {
     return this.runtime.getService<HyperfyService>(HyperfyService.serviceType)
-  }
-
-  
-
-  async entityAdd(entity: any) {
-    await this.init()
-    const id = entity.data.id;
-    
-    const blueprint = entity.world.blueprints.get(entity.data.blueprint)
-    if (this.loadedItems.has(id) || !entity?.data) return
-
-    const service = this.getService()
-    const world = service.getWorld()
-    
-    if (!blueprint?.model) return
-
-    const glbHash = blueprint.model.replace('asset://', '')
-    const modelUrl = `${world.assetsUrl}/${glbHash}`
-
-    const transform = {
-      position: [
-        entity.root.position.x,
-        entity.root.position.y,
-        entity.root.position.z
-      ],
-      quaternion: [
-        entity.root.quaternion.x,
-        entity.root.quaternion.y,
-        entity.root.quaternion.z,
-        entity.root.quaternion.w
-      ],
-      scale: [
-        entity.root.scale.x,
-        entity.root.scale.y,
-        entity.root.scale.z
-      ]
-    }
-
-    await this.page.evaluate(async ({ id, modelUrl, transform }) => {
-      const loader = new window.GLTFLoader()
-      return new Promise<void>((resolve, reject) => {
-        loader.load(modelUrl, gltf => {
-          const model = gltf.scene
-          model.name = id
-
-          model.position.set(...transform.position)
-          model.quaternion.set(...transform.quaternion)
-          model.scale.set(...transform.scale)
-
-          window.scene.add(model)
-          window.loadedModels.set(id, model)
-          resolve()
-        }, undefined, err => {
-          console.error("GLB load error:", err.message || err)
-          reject(new Error("GLTF Load failed: " + (err.message || err.type || 'Unknown error')))
-        })
-      })
-    }, { id, modelUrl, transform })
-
-    this.loadedItems.add(id)
   }
 
   public async start() {
@@ -152,49 +90,7 @@ export class SceneManager {
 
   }
 
-  async entitiesUpdate() {
-    const service = this.getService();
-    const world = service.getWorld();
-    const entities = world?.entities?.items;
-   
-    for (const [id, entity] of entities.entries()) {
-      if (!entity.root) {
-        return;
-      }
-      if (!this.loadedItems.has(id)) {
-        await this.entityAdd(entity)
-      }
-     
-      const transform = {
-        position: [
-          entity.root.position.x,
-          entity.root.position.y,
-          entity.root.position.z
-        ],
-        quaternion: [
-          entity.root.quaternion.x,
-          entity.root.quaternion.y,
-          entity.root.quaternion.z,
-          entity.root.quaternion.w
-        ],
-        scale: [
-          entity.root.scale.x,
-          entity.root.scale.y,
-          entity.root.scale.z
-        ]
-      }
-
-      // Send to browser to load and place the GLB
-      await this.page.evaluate(async ({ id, transform }) => {
-        const model = window.loadedModels.get(id);
-        
-        model.position.set(...transform.position)
-        model.quaternion.set(...transform.quaternion)
-        model.scale.set(...transform.scale)
-      }, { id, transform });
-      
-    }
-  }
+  
 
   async updatePlayerCamera() {
     const service = this.getService();
@@ -227,40 +123,6 @@ export class SceneManager {
     }, playerData)
   }
 
-  // SceneManager.ts
-  /**
-   * Fully loads a GLB in the browser, bakes textures in, and
-   * returns a JSON serialisation that Node can consume without GLTFLoader.
-   */
-  async loadGlbAsJSON(url: string) {
-    await this.init();
-    await this.start();
-    return this.page.evaluate(async (url) => {
-      const loader   = new window.THREE.GLTFLoader();
-      const gltf     = await loader.loadAsync(url);
-
-      gltf.scene.traverse(o => {
-        if (o.isMesh && o.material) {
-          [
-            'map','normalMap','metalnessMap','roughnessMap','aoMap',
-            'emissiveMap','envMap','specularMap'
-          ].forEach(k => { o.material[k] = null; });
-        }
-      });
-      // 1️⃣  We only need plain JS data – convert THREE.Scene to JSON
-      const sceneJSON = gltf.scene.toJSON();
-
-      // 2️⃣  Gather extra bits you care about
-      return {
-        json:  sceneJSON,
-        // serialize AnimationClips, VRM flag, whatever you need
-        animations: gltf.animations.map(a => a.toJSON()),
-        isVRM: !!gltf.userData.vrm
-      };
-    }, url);
-  }
-
-  // SceneManager.ts
   async loadGlbBytes(url: string): Promise<number[]> {
     await this.init();
     const STRIP_SLOTS = this.STRIP_SLOTS;

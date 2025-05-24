@@ -29,39 +29,10 @@
     window.renderer = renderer;
     window.THREE = THREE;
     window.GLTFLoader = THREE.GLTFLoader;
-    window.loadedModels = new Map();
     window.ObjectLoader = THREE.ObjectLoader;
     window.MaterialLoader = THREE.MaterialLoader;
     window.TextureLoader = new THREE.TextureLoader();
     window.GLTFExporter = THREE.GLTFExporter;
-    window.FileReader = FileReader;
-    window.createImageBitmap = createImageBitmap;
-
-    camera.position.z = 5;
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); // soft white light
-    scene.add(ambientLight);
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-    directionalLight.position.set(5, 5, 5); // position the light
-    scene.add(directionalLight);
-
-
-    // const boxColor = new THREE.Color("#ff0000");
-    // const geometry = new THREE.BoxGeometry();
-    // const material = new THREE.MeshBasicMaterial({ color: boxColor });
-    // const cube = new THREE.Mesh(geometry, material);
-    // cube.position.set(0, 0, 0);
-    // scene.add(cube)
-
-    // function animate() {
-    //   requestAnimationFrame(animate);
-    //   renderer.render(scene, camera);
-
-    // //   console.log(camera.position)
-    // }
-
-    // animate();
   </script>
 </body>
 </html>

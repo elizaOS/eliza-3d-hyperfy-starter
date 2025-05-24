@@ -135,19 +135,18 @@ export class AgentLoader extends System {
     const key = `${type}/${url}`;
     if (this.promises.has(key)) return this.promises.get(key);
 
-    const resolved = this.resolveUrl(url);
+    const resolvedUrl = this.resolveUrl(url);
 
-    const promise = fetch(resolved)
+    const promise = fetch(resolvedUrl)
       .then(async (response) => {
         if (!response.ok) {
           throw new Error(
-            `[AgentLoader] HTTP error ${response.status} for ${resolved}`
+            `[AgentLoader] HTTP error ${response.status} for ${resolvedUrl}`
           );
         }
 
         if (type === "model" || type === "avatar" || type === "emote") {
-          const arrayBuffer = await response.arrayBuffer();
-          const result = await this.parseGLB(type, key, arrayBuffer, resolved);
+          const result = await this.parseGLB(type, key, resolvedUrl);
           return result;
         }
 
@@ -178,7 +177,7 @@ export class AgentLoader extends System {
       .catch((error) => {
         this.promises.delete(key);
         console.error(
-          `[AgentLoader] Failed to load ${type} from ${resolved}`,
+          `[AgentLoader] Failed to load ${type} from ${resolvedUrl}`,
           error
         );
         throw error;
@@ -188,19 +187,16 @@ export class AgentLoader extends System {
     return promise;
   }
 
-  async parseGLB(type: string, key: string, _buf: ArrayBuffer | null, url: string) {
-    // 1️⃣  Fetch the bytes from the browser
+  async parseGLB(type: string, key: string, url: string) {
     const bytes = await this.sceneManager.loadGlbBytes(url);
     const arrayBuffer = Uint8Array.from(bytes).buffer;
   
-    // 2️⃣  Parse with THREE.GLTFLoader (textures are already embedded)
     const gltf: THREE.GLTF = await new Promise((ok, bad) =>
       this.gltfLoader.parse(arrayBuffer, '', ok, bad)
     );
   
     const isVRM = !!gltf.userData?.vrm;
   
-    // 3️⃣  Build your result exactly like before
     let result: any;
   
     if (type === 'model') {
